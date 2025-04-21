@@ -1,211 +1,310 @@
 "use client"
 
 import { useState, useEffect } from 'react'
-import { useSearchParams } from 'next/navigation'
-import { ChevronDown, ChevronUp, Filter, X } from 'lucide-react'
+import Link from 'next/link'
+import Image from 'next/image'
+import { supabase } from '@/lib/supabase'
 import { Button } from '@/components/ui/button'
-import StudioCard from '@/components/studio-card'
-import { fetchStudios } from '@/lib/supabase'
+import { Input } from '@/components/ui/input'
+import {
+  Card,
+  CardContent,
+  CardFooter,
+  CardHeader,
+  CardTitle,
+} from '@/components/ui/card'
+import {
+  Accordion,
+  AccordionContent,
+  AccordionItem,
+  AccordionTrigger,
+} from '@/components/ui/accordion'
+import { Badge } from '@/components/ui/badge'
+import { Search, Filter, Trash, Loader2, MapPin, Star, Instagram, ExternalLink, Store, Building2 } from 'lucide-react'
 
 export default function StudiosPage() {
-  const searchParams = useSearchParams()
+  // State for studios and pagination
   const [studios, setStudios] = useState<any[]>([])
+  const [loading, setLoading] = useState(true)
   const [totalStudios, setTotalStudios] = useState(0)
-  const [isLoading, setIsLoading] = useState(true)
-  const [showFilters, setShowFilters] = useState(false)
+  const [currentPage, setCurrentPage] = useState(1)
   
-  // Filter states
+  // State for filters
+  const [searchTerm, setSearchTerm] = useState('')
   const [location, setLocation] = useState('')
-  const [page, setPage] = useState(1)
+  const [isFilterOpen, setIsFilterOpen] = useState(false)
+  
+  const ITEMS_PER_PAGE = 12
   
   useEffect(() => {
-    // Check for search parameters
-    const locationParam = searchParams.get('location')
-    
-    if (locationParam) setLocation(locationParam)
-    
-    // Load studios
-    const loadData = async () => {
-      setIsLoading(true)
+    // Fetch studios whenever filters change
+    const loadStudios = async () => {
+      setLoading(true)
       
       try {
-        // Fetch studios with applied filters
-        const { studios, total } = await fetchStudios({
-          page: 1,
-          limit: 12,
-          location: locationParam || undefined,
-        })
+        // Create the query
+        let query = supabase
+          .from('studios')
+          .select('*, studio_artists(count)', { count: 'exact' })
+          .order('name')
         
-        setStudios(studios)
-        setTotalStudios(total)
-        setPage(1)
+        // Apply filters
+        if (location) {
+          query = query.ilike('city', `%${location}%`)
+        }
+        
+        if (searchTerm) {
+          query = query.or(`name.ilike.%${searchTerm}%,description.ilike.%${searchTerm}%`)
+        }
+        
+        // Apply pagination
+        const start = (currentPage - 1) * ITEMS_PER_PAGE
+        const end = start + ITEMS_PER_PAGE - 1
+        query = query.range(start, end)
+        
+        // Execute query
+        const { data, error, count } = await query
+        
+        if (error) throw error
+        
+        setStudios(data || [])
+        setTotalStudios(count || 0)
       } catch (error) {
-        console.error('Error loading data:', error)
+        console.error('Error loading studios:', error)
       } finally {
-        setIsLoading(false)
+        setLoading(false)
       }
     }
     
-    loadData()
-  }, [searchParams])
+    loadStudios()
+  }, [currentPage, searchTerm, location])
   
-  const loadMoreStudios = async () => {
-    setIsLoading(true)
-    
-    try {
-      const nextPage = page + 1
-      
-      const { studios: moreStudios } = await fetchStudios({
-        page: nextPage,
-        limit: 12,
-        location: location || undefined,
-      })
-      
-      setStudios(prevStudios => [...prevStudios, ...moreStudios])
-      setPage(nextPage)
-    } catch (error) {
-      console.error('Error loading more studios:', error)
-    } finally {
-      setIsLoading(false)
-    }
+  const handleSearchSubmit = (e: React.FormEvent) => {
+    e.preventDefault()
+    const searchInput = document.getElementById('search-studios') as HTMLInputElement
+    setSearchTerm(searchInput.value)
+    setCurrentPage(1)
   }
   
-  const applyFilters = async () => {
-    setIsLoading(true)
-    
-    try {
-      const { studios: filteredStudios, total } = await fetchStudios({
-        page: 1,
-        limit: 12,
-        location: location || undefined,
-      })
-      
-      setStudios(filteredStudios)
-      setTotalStudios(total)
-      setPage(1)
-      
-      // On mobile, close filters after applying
-      if (window.innerWidth < 768) {
-        setShowFilters(false)
-      }
-    } catch (error) {
-      console.error('Error applying filters:', error)
-    } finally {
-      setIsLoading(false)
-    }
-  }
-  
-  const resetFilters = () => {
+  const clearAllFilters = () => {
     setLocation('')
+    setSearchTerm('')
+    setCurrentPage(1)
+    
+    const searchInput = document.getElementById('search-studios') as HTMLInputElement
+    if (searchInput) {
+      searchInput.value = ''
+    }
   }
+  
+  const totalPages = Math.ceil(totalStudios / ITEMS_PER_PAGE)
   
   return (
     <div className="container mx-auto px-4 py-8">
-      <div className="mb-8">
-        <h1 className="text-3xl font-bold mb-2">Tattoo Studios</h1>
-        <p className="text-gray-600 dark:text-gray-300">
-          Discover the best tattoo studios for your next tattoo
-        </p>
-      </div>
-      
-      {/* Mobile Filter Toggle Button */}
-      <div className="md:hidden mb-4">
-        <Button 
-          variant="outline" 
-          className="w-full"
-          onClick={() => setShowFilters(!showFilters)}
+      <div className="flex justify-between items-center mb-8">
+        <h1 className="text-3xl font-bold">Browse Tattoo Studios</h1>
+        <Button
+          variant="outline"
+          onClick={() => setIsFilterOpen(!isFilterOpen)}
+          className="md:hidden"
         >
-          <Filter className="mr-2 h-4 w-4" />
-          {showFilters ? 'Hide Filters' : 'Show Filters'}
-          {showFilters ? <ChevronUp className="ml-2 h-4 w-4" /> : <ChevronDown className="ml-2 h-4 w-4" />}
+          <Filter className="h-4 w-4 mr-2" />
+          Filters
         </Button>
       </div>
       
-      <div className="flex flex-col md:flex-row gap-6">
+      <div className="mb-8">
+        <form onSubmit={handleSearchSubmit} className="flex w-full max-w-lg space-x-2">
+          <div className="relative flex-1">
+            <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-gray-500" />
+            <Input
+              id="search-studios"
+              type="text"
+              placeholder="Search studios by name or location..."
+              className="pl-8"
+              defaultValue={searchTerm}
+            />
+          </div>
+          <Button type="submit">Search</Button>
+        </form>
+      </div>
+      
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
         {/* Filters Sidebar */}
-        <div 
-          className={`w-full md:w-64 ${showFilters ? 'block' : 'hidden'} md:block transition-all duration-300 ease-in-out`}
-        >
-          <div className="bg-white dark:bg-gray-950 p-4 rounded-lg border shadow-sm">
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="text-lg font-semibold">Filters</h2>
-              <Button variant="ghost" size="sm" onClick={resetFilters}>
-                <X className="h-4 w-4 mr-1" />
-                Reset
+        <div className={`md:block ${isFilterOpen ? 'block' : 'hidden'}`}>
+          <div className="bg-white dark:bg-gray-950 rounded-lg border p-4 sticky top-4">
+            <div className="flex justify-between items-center mb-4">
+              <h2 className="font-semibold text-lg">Filters</h2>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={clearAllFilters}
+                className="text-gray-500 hover:text-red-500"
+              >
+                <Trash className="h-4 w-4 mr-1" />
+                Clear
               </Button>
             </div>
             
-            {/* Location */}
-            <div className="mb-6">
-              <label htmlFor="location" className="block text-sm font-medium mb-2">
-                Location
-              </label>
-              <input
-                type="text"
-                id="location"
-                className="w-full px-3 py-2 border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-primary"
-                placeholder="City, State or Country"
-                value={location}
-                onChange={(e) => setLocation(e.target.value)}
-              />
-            </div>
-            
-            <Button onClick={applyFilters} className="w-full">
-              Apply Filters
-            </Button>
+            {/* Location Filter */}
+            <Accordion type="single" collapsible defaultValue="location">
+              <AccordionItem value="location">
+                <AccordionTrigger>Location</AccordionTrigger>
+                <AccordionContent>
+                  <Input
+                    placeholder="City or postal code"
+                    value={location}
+                    onChange={(e) => {
+                      setLocation(e.target.value)
+                      setCurrentPage(1)
+                    }}
+                  />
+                </AccordionContent>
+              </AccordionItem>
+            </Accordion>
           </div>
         </div>
         
         {/* Studios Grid */}
-        <div className="flex-1">
-          {isLoading && studios.length === 0 ? (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {Array.from({ length: 6 }).map((_, index) => (
-                <div key={index} className="h-80 bg-gray-200 dark:bg-gray-800 rounded-lg animate-pulse"></div>
-              ))}
+        <div className="md:col-span-3">
+          {loading ? (
+            <div className="flex justify-center items-center h-64">
+              <Loader2 className="h-8 w-8 animate-spin text-primary" />
             </div>
           ) : studios.length > 0 ? (
             <>
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
                 {studios.map((studio) => (
-                  <StudioCard
-                    key={studio.id}
-                    id={studio.id}
-                    name={studio.name}
-                    logoUrl={studio.logo_url}
-                    description={studio.description}
-                    location={studio.city ? `${studio.city}, ${studio.state}` : undefined}
-                    address={studio.address}
-                    artistCount={studio.studio_artists?.length}
-                    isVerified={studio.is_verified}
-                    website={studio.website}
-                    instagram={studio.instagram_handle}
-                  />
+                  <Card key={studio.id} className="overflow-hidden hover:shadow-md transition-shadow">
+                    <div className="h-40 relative">
+                      {studio.banner_url ? (
+                        <Image
+                          src={studio.banner_url}
+                          alt={studio.name}
+                          fill
+                          className="object-cover"
+                        />
+                      ) : (
+                        <div className="w-full h-full bg-gray-100 dark:bg-gray-800 flex items-center justify-center">
+                          <div className="flex flex-col items-center">
+                            <Building2 className="h-12 w-12 text-gray-400" />
+                            <span className="text-sm text-gray-500 mt-2">No banner image</span>
+                          </div>
+                        </div>
+                      )}
+                      
+                      {studio.logo_url && (
+                        <div className="absolute bottom-0 left-4 transform translate-y-1/2">
+                          <div className="w-16 h-16 rounded-full overflow-hidden border-4 border-white dark:border-gray-950 bg-white dark:bg-gray-950">
+                            <div className="relative w-full h-full">
+                              <Image
+                                src={studio.logo_url}
+                                alt={`${studio.name} logo`}
+                                fill
+                                className="object-cover"
+                              />
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                    
+                    <CardHeader className={studio.logo_url ? "pt-8 pb-2" : "pb-2"}>
+                      <CardTitle className="text-lg">{studio.name}</CardTitle>
+                      {studio.city && (
+                        <div className="flex items-center text-sm text-gray-500 dark:text-gray-400">
+                          <MapPin className="h-3 w-3 mr-1" />
+                          <span>{studio.city}, {studio.state || ''}</span>
+                        </div>
+                      )}
+                    </CardHeader>
+                    
+                    <CardContent className="pb-2">
+                      {studio.description && (
+                        <p className="text-sm line-clamp-2 mb-3">
+                          {studio.description}
+                        </p>
+                      )}
+                      
+                      <div className="flex items-center">
+                        <Badge variant="outline" className="mr-2">
+                          {studio.studio_artists?.length || 0} Artists
+                        </Badge>
+                        
+                        {studio.is_verified && (
+                          <Badge variant="secondary">
+                            Verified
+                          </Badge>
+                        )}
+                      </div>
+                    </CardContent>
+                    
+                    <CardFooter className="flex justify-between items-center pt-2">
+                      <div className="flex space-x-2">
+                        {studio.instagram_handle && (
+                          <a 
+                            href={`https://instagram.com/${studio.instagram_handle}`} 
+                            target="_blank" 
+                            rel="noopener noreferrer"
+                            className="text-gray-500 hover:text-gray-700 dark:hover:text-gray-300"
+                          >
+                            <Instagram className="h-4 w-4" />
+                          </a>
+                        )}
+                        
+                        {studio.website && (
+                          <a 
+                            href={studio.website} 
+                            target="_blank" 
+                            rel="noopener noreferrer"
+                            className="text-gray-500 hover:text-gray-700 dark:hover:text-gray-300"
+                          >
+                            <ExternalLink className="h-4 w-4" />
+                          </a>
+                        )}
+                      </div>
+                      
+                      <Button asChild size="sm">
+                        <Link href={`/studios/${studio.id}`}>View Studio</Link>
+                      </Button>
+                    </CardFooter>
+                  </Card>
                 ))}
               </div>
               
-              {studios.length < totalStudios && (
-                <div className="mt-8 text-center">
-                  <Button
-                    variant="outline"
-                    size="lg"
-                    onClick={loadMoreStudios}
-                    disabled={isLoading}
-                  >
-                    {isLoading ? 'Loading...' : 'Load More Studios'}
-                  </Button>
+              {/* Pagination */}
+              {totalPages > 1 && (
+                <div className="flex justify-center mt-8">
+                  <div className="flex space-x-2">
+                    <Button
+                      variant="outline"
+                      onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
+                      disabled={currentPage === 1}
+                    >
+                      Previous
+                    </Button>
+                    <div className="flex items-center justify-center px-4 border rounded-md">
+                      Page {currentPage} of {totalPages}
+                    </div>
+                    <Button
+                      variant="outline"
+                      onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))}
+                      disabled={currentPage === totalPages}
+                    >
+                      Next
+                    </Button>
+                  </div>
                 </div>
               )}
             </>
           ) : (
-            <div className="text-center py-12">
+            <div className="text-center py-16 border border-dashed rounded-lg">
+              <Store className="mx-auto h-12 w-12 text-gray-400 mb-4" />
               <h3 className="text-lg font-medium mb-2">No studios found</h3>
-              <p className="text-gray-500 dark:text-gray-400 mb-4">
-                Try adjusting your location search
+              <p className="text-gray-500 dark:text-gray-400 mb-6 max-w-md mx-auto">
+                We couldn't find any studios matching your search criteria. Try adjusting your filters.
               </p>
-              <Button variant="outline" onClick={resetFilters}>
-                Reset Filters
-              </Button>
+              <Button onClick={clearAllFilters}>Clear All Filters</Button>
             </div>
           )}
         </div>
