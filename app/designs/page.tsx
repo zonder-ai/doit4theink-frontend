@@ -1,380 +1,411 @@
 "use client"
 
 import { useState, useEffect } from 'react'
-import { useSearchParams } from 'next/navigation'
-import { ChevronDown, ChevronUp, Filter, X } from 'lucide-react'
-import { Button } from '@/components/ui/button'
-import DesignCard from '@/components/design-card'
+import Link from 'next/link'
+import Image from 'next/image'
 import { fetchDesigns, fetchStyles, fetchTags } from '@/lib/supabase'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Slider } from '@/components/ui/slider'
+import { Checkbox } from '@/components/ui/checkbox'
+import {
+  Card,
+  CardContent,
+  CardFooter,
+  CardHeader,
+  CardTitle,
+} from '@/components/ui/card'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
+import {
+  Accordion,
+  AccordionContent,
+  AccordionItem,
+  AccordionTrigger,
+} from '@/components/ui/accordion'
+import { Search, Filter, Paintbrush, Trash, Loader2 } from 'lucide-react'
 
 export default function DesignsPage() {
-  const searchParams = useSearchParams()
+  // State for designs and pagination
   const [designs, setDesigns] = useState<any[]>([])
+  const [loading, setLoading] = useState(true)
   const [totalDesigns, setTotalDesigns] = useState(0)
+  const [currentPage, setCurrentPage] = useState(1)
   const [styles, setStyles] = useState<any[]>([])
   const [tags, setTags] = useState<any[]>([])
-  const [isLoading, setIsLoading] = useState(true)
-  const [showFilters, setShowFilters] = useState(false)
   
-  // Filter states
+  // State for filters
+  const [searchTerm, setSearchTerm] = useState('')
   const [selectedStyles, setSelectedStyles] = useState<string[]>([])
   const [selectedTags, setSelectedTags] = useState<string[]>([])
-  const [minPrice, setMinPrice] = useState<number | undefined>(undefined)
-  const [maxPrice, setMaxPrice] = useState<number | undefined>(undefined)
-  const [isColor, setIsColor] = useState<boolean | undefined>(undefined)
-  const [searchTerm, setSearchTerm] = useState('')
-  const [page, setPage] = useState(1)
+  const [priceRange, setPriceRange] = useState<[number, number]>([0, 1000])
+  const [isColor, setIsColor] = useState<boolean | null>(null)
+  const [location, setLocation] = useState('')
+  const [isFilterOpen, setIsFilterOpen] = useState(false)
+  
+  const ITEMS_PER_PAGE = 12
   
   useEffect(() => {
-    // Check for search parameters
-    const styleParam = searchParams.get('style')
-    const tagParam = searchParams.get('tag')
-    const minParam = searchParams.get('min')
-    const maxParam = searchParams.get('max')
-    const colorParam = searchParams.get('color')
-    const searchParam = searchParams.get('q')
-    
-    if (styleParam) setSelectedStyles(styleParam.split(','))
-    if (tagParam) setSelectedTags(tagParam.split(','))
-    if (minParam) setMinPrice(Number(minParam))
-    if (maxParam) setMaxPrice(Number(maxParam))
-    if (colorParam) setIsColor(colorParam === 'true')
-    if (searchParam) setSearchTerm(searchParam)
-    
-    // Load designs, styles and tags
-    const loadData = async () => {
-      setIsLoading(true)
+    // Fetch styles and tags on mount
+    const loadFilters = async () => {
+      const stylesData = await fetchStyles()
+      const tagsData = await fetchTags()
       
-      try {
-        // Fetch styles and tags for filter options
-        const stylesData = await fetchStyles()
-        const tagsData = await fetchTags()
-        
-        setStyles(stylesData)
-        setTags(tagsData)
-        
-        // Fetch designs with applied filters
-        const { designs, total } = await fetchDesigns({
-          page: 1,
-          limit: 12,
-          styleIds: styleParam ? styleParam.split(',') : [],
-          tagIds: tagParam ? tagParam.split(',') : [],
-          minPrice: minParam ? Number(minParam) : undefined,
-          maxPrice: maxParam ? Number(maxParam) : undefined,
-          isColor: colorParam ? colorParam === 'true' : undefined,
-          searchTerm: searchParam || undefined,
-        })
-        
-        setDesigns(designs)
-        setTotalDesigns(total)
-        setPage(1)
-      } catch (error) {
-        console.error('Error loading data:', error)
-      } finally {
-        setIsLoading(false)
-      }
+      setStyles(stylesData)
+      setTags(tagsData)
     }
     
-    loadData()
-  }, [searchParams])
+    loadFilters()
+  }, [])
   
-  const loadMoreDesigns = async () => {
-    setIsLoading(true)
-    
-    try {
-      const nextPage = page + 1
+  useEffect(() => {
+    // Fetch designs whenever filters change
+    const loadDesigns = async () => {
+      setLoading(true)
       
-      const { designs: moreDesigns } = await fetchDesigns({
-        page: nextPage,
-        limit: 12,
-        styleIds: selectedStyles,
-        tagIds: selectedTags,
-        minPrice,
-        maxPrice,
+      const styleIds = selectedStyles.length > 0 ? styles
+        .filter(style => selectedStyles.includes(style.name))
+        .map(style => style.id) : []
+        
+      const tagIds = selectedTags.length > 0 ? tags
+        .filter(tag => selectedTags.includes(tag.name))
+        .map(tag => tag.id) : []
+      
+      const { designs, total } = await fetchDesigns({
+        page: currentPage,
+        limit: ITEMS_PER_PAGE,
+        styleIds,
+        tagIds,
+        minPrice: priceRange[0],
+        maxPrice: priceRange[1],
         isColor,
-        searchTerm: searchTerm || undefined,
+        location,
+        searchTerm,
       })
       
-      setDesigns(prevDesigns => [...prevDesigns, ...moreDesigns])
-      setPage(nextPage)
-    } catch (error) {
-      console.error('Error loading more designs:', error)
-    } finally {
-      setIsLoading(false)
-    }
-  }
-  
-  const applyFilters = async () => {
-    setIsLoading(true)
-    
-    try {
-      const { designs: filteredDesigns, total } = await fetchDesigns({
-        page: 1,
-        limit: 12,
-        styleIds: selectedStyles,
-        tagIds: selectedTags,
-        minPrice,
-        maxPrice,
-        isColor,
-        searchTerm: searchTerm || undefined,
-      })
-      
-      setDesigns(filteredDesigns)
+      setDesigns(designs)
       setTotalDesigns(total)
-      setPage(1)
-      
-      // On mobile, close filters after applying
-      if (window.innerWidth < 768) {
-        setShowFilters(false)
-      }
-    } catch (error) {
-      console.error('Error applying filters:', error)
-    } finally {
-      setIsLoading(false)
+      setLoading(false)
     }
+    
+    loadDesigns()
+  }, [currentPage, selectedStyles, selectedTags, priceRange, isColor, location, searchTerm, styles, tags])
+  
+  const handleSearchSubmit = (e: React.FormEvent) => {
+    e.preventDefault()
+    const searchInput = document.getElementById('search-designs') as HTMLInputElement
+    setSearchTerm(searchInput.value)
+    setCurrentPage(1)
   }
   
-  const resetFilters = () => {
+  const handleStyleSelect = (styleName: string) => {
+    setSelectedStyles(prev => {
+      if (prev.includes(styleName)) {
+        return prev.filter(style => style !== styleName)
+      } else {
+        return [...prev, styleName]
+      }
+    })
+    setCurrentPage(1)
+  }
+  
+  const handleTagSelect = (tagName: string) => {
+    setSelectedTags(prev => {
+      if (prev.includes(tagName)) {
+        return prev.filter(tag => tag !== tagName)
+      } else {
+        return [...prev, tagName]
+      }
+    })
+    setCurrentPage(1)
+  }
+  
+  const handlePriceChange = (values: number[]) => {
+    setPriceRange([values[0], values[1]])
+  }
+  
+  const handleColorFilterChange = (value: string) => {
+    if (value === 'all') {
+      setIsColor(null)
+    } else if (value === 'color') {
+      setIsColor(true)
+    } else {
+      setIsColor(false)
+    }
+    setCurrentPage(1)
+  }
+  
+  const clearAllFilters = () => {
     setSelectedStyles([])
     setSelectedTags([])
-    setMinPrice(undefined)
-    setMaxPrice(undefined)
-    setIsColor(undefined)
+    setPriceRange([0, 1000])
+    setIsColor(null)
+    setLocation('')
     setSearchTerm('')
+    setCurrentPage(1)
+    
+    const searchInput = document.getElementById('search-designs') as HTMLInputElement
+    if (searchInput) {
+      searchInput.value = ''
+    }
   }
   
-  const toggleStyle = (styleId: string) => {
-    setSelectedStyles(prev => 
-      prev.includes(styleId) 
-        ? prev.filter(id => id !== styleId) 
-        : [...prev, styleId]
-    )
-  }
-  
-  const toggleTag = (tagId: string) => {
-    setSelectedTags(prev => 
-      prev.includes(tagId) 
-        ? prev.filter(id => id !== tagId) 
-        : [...prev, tagId]
-    )
-  }
+  const totalPages = Math.ceil(totalDesigns / ITEMS_PER_PAGE)
   
   return (
     <div className="container mx-auto px-4 py-8">
-      <div className="mb-8">
-        <h1 className="text-3xl font-bold mb-2">Tattoo Designs</h1>
-        <p className="text-gray-600 dark:text-gray-300">
-          Browse our collection of tattoo designs from talented artists
-        </p>
-      </div>
-      
-      {/* Mobile Filter Toggle Button */}
-      <div className="md:hidden mb-4">
-        <Button 
-          variant="outline" 
-          className="w-full"
-          onClick={() => setShowFilters(!showFilters)}
+      <div className="flex justify-between items-center mb-8">
+        <h1 className="text-3xl font-bold">Browse Tattoo Designs</h1>
+        <Button
+          variant="outline"
+          onClick={() => setIsFilterOpen(!isFilterOpen)}
+          className="md:hidden"
         >
-          <Filter className="mr-2 h-4 w-4" />
-          {showFilters ? 'Hide Filters' : 'Show Filters'}
-          {showFilters ? <ChevronUp className="ml-2 h-4 w-4" /> : <ChevronDown className="ml-2 h-4 w-4" />}
+          <Filter className="h-4 w-4 mr-2" />
+          Filters
         </Button>
       </div>
       
-      <div className="flex flex-col md:flex-row gap-6">
+      <div className="mb-8">
+        <form onSubmit={handleSearchSubmit} className="flex w-full max-w-lg space-x-2">
+          <div className="relative flex-1">
+            <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-gray-500" />
+            <Input
+              id="search-designs"
+              type="text"
+              placeholder="Search designs, styles, artists..."
+              className="pl-8"
+              defaultValue={searchTerm}
+            />
+          </div>
+          <Button type="submit">Search</Button>
+        </form>
+      </div>
+      
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
         {/* Filters Sidebar */}
-        <div 
-          className={`w-full md:w-64 ${showFilters ? 'block' : 'hidden'} md:block transition-all duration-300 ease-in-out`}
-        >
-          <div className="bg-white dark:bg-gray-950 p-4 rounded-lg border shadow-sm">
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="text-lg font-semibold">Filters</h2>
-              <Button variant="ghost" size="sm" onClick={resetFilters}>
-                <X className="h-4 w-4 mr-1" />
-                Reset
+        <div className={`md:block ${isFilterOpen ? 'block' : 'hidden'}`}>
+          <div className="bg-white dark:bg-gray-950 rounded-lg border p-4 sticky top-4">
+            <div className="flex justify-between items-center mb-4">
+              <h2 className="font-semibold text-lg">Filters</h2>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={clearAllFilters}
+                className="text-gray-500 hover:text-red-500"
+              >
+                <Trash className="h-4 w-4 mr-1" />
+                Clear
               </Button>
             </div>
             
-            {/* Search */}
-            <div className="mb-6">
-              <label htmlFor="search" className="block text-sm font-medium mb-2">
-                Search
-              </label>
-              <input
-                type="text"
-                id="search"
-                className="w-full px-3 py-2 border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-primary"
-                placeholder="Search designs..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-              />
-            </div>
+            {/* Styles Filter */}
+            <Accordion type="single" collapsible defaultValue="styles">
+              <AccordionItem value="styles">
+                <AccordionTrigger>Styles</AccordionTrigger>
+                <AccordionContent>
+                  <div className="space-y-2 max-h-48 overflow-y-auto">
+                    {styles.map(style => (
+                      <div key={style.id} className="flex items-center space-x-2">
+                        <Checkbox
+                          id={`style-${style.id}`}
+                          checked={selectedStyles.includes(style.name)}
+                          onCheckedChange={() => handleStyleSelect(style.name)}
+                        />
+                        <label
+                          htmlFor={`style-${style.id}`}
+                          className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 cursor-pointer"
+                        >
+                          {style.name}
+                        </label>
+                      </div>
+                    ))}
+                  </div>
+                </AccordionContent>
+              </AccordionItem>
+            </Accordion>
             
-            {/* Price Range */}
-            <div className="mb-6">
-              <h3 className="text-sm font-medium mb-2">Price Range</h3>
-              <div className="flex space-x-2">
-                <div>
-                  <label htmlFor="min-price" className="sr-only">Minimum Price</label>
-                  <input
-                    type="number"
-                    id="min-price"
-                    className="w-full px-3 py-2 border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-primary"
-                    placeholder="Min"
-                    min="0"
-                    value={minPrice || ''}
-                    onChange={(e) => setMinPrice(e.target.value ? Number(e.target.value) : undefined)}
-                  />
-                </div>
-                <div className="flex items-center">
-                  <span className="text-gray-500">-</span>
-                </div>
-                <div>
-                  <label htmlFor="max-price" className="sr-only">Maximum Price</label>
-                  <input
-                    type="number"
-                    id="max-price"
-                    className="w-full px-3 py-2 border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-primary"
-                    placeholder="Max"
-                    min="0"
-                    value={maxPrice || ''}
-                    onChange={(e) => setMaxPrice(e.target.value ? Number(e.target.value) : undefined)}
-                  />
-                </div>
-              </div>
-            </div>
+            {/* Tags Filter */}
+            <Accordion type="single" collapsible>
+              <AccordionItem value="tags">
+                <AccordionTrigger>Tags</AccordionTrigger>
+                <AccordionContent>
+                  <div className="space-y-2 max-h-48 overflow-y-auto">
+                    {tags.map(tag => (
+                      <div key={tag.id} className="flex items-center space-x-2">
+                        <Checkbox
+                          id={`tag-${tag.id}`}
+                          checked={selectedTags.includes(tag.name)}
+                          onCheckedChange={() => handleTagSelect(tag.name)}
+                        />
+                        <label
+                          htmlFor={`tag-${tag.id}`}
+                          className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 cursor-pointer"
+                        >
+                          {tag.name}
+                        </label>
+                      </div>
+                    ))}
+                  </div>
+                </AccordionContent>
+              </AccordionItem>
+            </Accordion>
             
-            {/* Color Option */}
-            <div className="mb-6">
-              <h3 className="text-sm font-medium mb-2">Color Options</h3>
-              <div className="flex items-center space-x-4">
-                <label className="inline-flex items-center">
-                  <input
-                    type="radio"
-                    className="form-radio"
-                    name="color"
-                    checked={isColor === true}
-                    onChange={() => setIsColor(true)}
-                  />
-                  <span className="ml-2 text-sm">Color</span>
-                </label>
-                <label className="inline-flex items-center">
-                  <input
-                    type="radio"
-                    className="form-radio"
-                    name="color"
-                    checked={isColor === false}
-                    onChange={() => setIsColor(false)}
-                  />
-                  <span className="ml-2 text-sm">Black & Grey</span>
-                </label>
-                <label className="inline-flex items-center">
-                  <input
-                    type="radio"
-                    className="form-radio"
-                    name="color"
-                    checked={isColor === undefined}
-                    onChange={() => setIsColor(undefined)}
-                  />
-                  <span className="ml-2 text-sm">Any</span>
-                </label>
-              </div>
-            </div>
-            
-            {/* Styles */}
-            <div className="mb-6">
-              <h3 className="text-sm font-medium mb-2">Styles</h3>
-              <div className="space-y-2 max-h-48 overflow-y-auto">
-                {styles.map((style) => (
-                  <label key={style.id} className="flex items-center">
-                    <input
-                      type="checkbox"
-                      className="form-checkbox"
-                      checked={selectedStyles.includes(style.id)}
-                      onChange={() => toggleStyle(style.id)}
+            {/* Price Range Filter */}
+            <Accordion type="single" collapsible>
+              <AccordionItem value="price">
+                <AccordionTrigger>Price Range</AccordionTrigger>
+                <AccordionContent>
+                  <div className="space-y-4">
+                    <div className="flex justify-between">
+                      <span>${priceRange[0]}</span>
+                      <span>${priceRange[1]}</span>
+                    </div>
+                    <Slider
+                      defaultValue={[0, 1000]}
+                      min={0}
+                      max={1000}
+                      step={50}
+                      value={[priceRange[0], priceRange[1]]}
+                      onValueChange={handlePriceChange}
                     />
-                    <span className="ml-2 text-sm">{style.name}</span>
-                  </label>
-                ))}
-              </div>
-            </div>
+                  </div>
+                </AccordionContent>
+              </AccordionItem>
+            </Accordion>
             
-            {/* Tags */}
-            <div className="mb-6">
-              <h3 className="text-sm font-medium mb-2">Tags</h3>
-              <div className="space-y-2 max-h-48 overflow-y-auto">
-                {tags.map((tag) => (
-                  <label key={tag.id} className="flex items-center">
-                    <input
-                      type="checkbox"
-                      className="form-checkbox"
-                      checked={selectedTags.includes(tag.id)}
-                      onChange={() => toggleTag(tag.id)}
-                    />
-                    <span className="ml-2 text-sm">{tag.name}</span>
-                  </label>
-                ))}
-              </div>
-            </div>
+            {/* Color Filter */}
+            <Accordion type="single" collapsible>
+              <AccordionItem value="color">
+                <AccordionTrigger>Color</AccordionTrigger>
+                <AccordionContent>
+                  <Select
+                    onValueChange={handleColorFilterChange}
+                    value={isColor === null ? 'all' : isColor ? 'color' : 'blackAndGrey'}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select color option" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All</SelectItem>
+                      <SelectItem value="color">Color</SelectItem>
+                      <SelectItem value="blackAndGrey">Black & Grey</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </AccordionContent>
+              </AccordionItem>
+            </Accordion>
             
-            <Button onClick={applyFilters} className="w-full">
-              Apply Filters
-            </Button>
+            {/* Location Filter */}
+            <Accordion type="single" collapsible>
+              <AccordionItem value="location">
+                <AccordionTrigger>Location</AccordionTrigger>
+                <AccordionContent>
+                  <Input
+                    placeholder="City or postal code"
+                    value={location}
+                    onChange={(e) => {
+                      setLocation(e.target.value)
+                      setCurrentPage(1)
+                    }}
+                  />
+                </AccordionContent>
+              </AccordionItem>
+            </Accordion>
           </div>
         </div>
         
         {/* Designs Grid */}
-        <div className="flex-1">
-          {isLoading && designs.length === 0 ? (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-              {Array.from({ length: 12 }).map((_, index) => (
-                <div key={index} className="h-80 bg-gray-200 dark:bg-gray-800 rounded-lg animate-pulse"></div>
-              ))}
+        <div className="md:col-span-3">
+          {loading ? (
+            <div className="flex justify-center items-center h-64">
+              <Loader2 className="h-8 w-8 animate-spin text-primary" />
             </div>
           ) : designs.length > 0 ? (
             <>
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
                 {designs.map((design) => (
-                  <DesignCard
-                    key={design.id}
-                    id={design.id}
-                    title={design.title}
-                    imageUrl={design.primary_image_url}
-                    price={design.base_price}
-                    depositAmount={design.deposit_amount}
-                    artistName={design.artist_name}
-                    studioName={design.studio_name}
-                    location={design.city ? `${design.city}, ${design.state}` : undefined}
-                    styles={design.styles}
-                    isFlash={design.is_flash}
-                    isCustom={design.is_custom}
-                    isColor={design.is_color}
-                  />
+                  <Card key={design.id} className="overflow-hidden hover:shadow-md transition-shadow">
+                    <div className="aspect-square relative">
+                      {design.design_images && design.design_images[0] ? (
+                        <Image
+                          src={design.design_images[0].image_url}
+                          alt={design.title}
+                          fill
+                          className="object-cover"
+                        />
+                      ) : (
+                        <div className="w-full h-full bg-gray-200 dark:bg-gray-800 flex items-center justify-center">
+                          <Paintbrush className="h-12 w-12 text-gray-400" />
+                        </div>
+                      )}
+                    </div>
+                    <CardHeader className="py-3">
+                      <CardTitle className="text-lg">{design.title}</CardTitle>
+                    </CardHeader>
+                    <CardContent className="py-2">
+                      <div className="flex items-center text-sm text-gray-500 dark:text-gray-400">
+                        {design.artist_name || 'Unknown Artist'}
+                      </div>
+                      <div className="flex flex-wrap gap-1 mt-2">
+                        {design.styles?.slice(0, 2).map((style: any) => (
+                          <span
+                            key={style.id}
+                            className="inline-flex items-center px-2 py-1 text-xs font-medium rounded-full bg-primary/10 text-primary"
+                          >
+                            {style.name}
+                          </span>
+                        ))}
+                      </div>
+                    </CardContent>
+                    <CardFooter className="flex justify-between items-center">
+                      <div className="font-semibold">${design.base_price}</div>
+                      <Button asChild size="sm">
+                        <Link href={`/designs/${design.id}`}>View Details</Link>
+                      </Button>
+                    </CardFooter>
+                  </Card>
                 ))}
               </div>
               
-              {designs.length < totalDesigns && (
-                <div className="mt-8 text-center">
-                  <Button
-                    variant="outline"
-                    size="lg"
-                    onClick={loadMoreDesigns}
-                    disabled={isLoading}
-                  >
-                    {isLoading ? 'Loading...' : 'Load More Designs'}
-                  </Button>
+              {/* Pagination */}
+              {totalPages > 1 && (
+                <div className="flex justify-center mt-8">
+                  <div className="flex space-x-2">
+                    <Button
+                      variant="outline"
+                      onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
+                      disabled={currentPage === 1}
+                    >
+                      Previous
+                    </Button>
+                    <div className="flex items-center justify-center px-4 border rounded-md">
+                      Page {currentPage} of {totalPages}
+                    </div>
+                    <Button
+                      variant="outline"
+                      onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))}
+                      disabled={currentPage === totalPages}
+                    >
+                      Next
+                    </Button>
+                  </div>
                 </div>
               )}
             </>
           ) : (
-            <div className="text-center py-12">
+            <div className="text-center py-16 border border-dashed rounded-lg">
+              <Paintbrush className="mx-auto h-12 w-12 text-gray-400 mb-4" />
               <h3 className="text-lg font-medium mb-2">No designs found</h3>
-              <p className="text-gray-500 dark:text-gray-400 mb-4">
-                Try adjusting your filters or search term
+              <p className="text-gray-500 dark:text-gray-400 mb-6 max-w-md mx-auto">
+                We couldn't find any designs matching your filters. Try adjusting your search criteria.
               </p>
-              <Button variant="outline" onClick={resetFilters}>
-                Reset Filters
-              </Button>
+              <Button onClick={clearAllFilters}>Clear All Filters</Button>
             </div>
           )}
         </div>
