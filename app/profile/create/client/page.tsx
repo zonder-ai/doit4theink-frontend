@@ -6,17 +6,17 @@ import Link from 'next/link'
 import Image from 'next/image'
 import { supabase } from '@/lib/supabase'
 import { Button } from '@/components/ui/button'
-import { ChevronLeft, Save, Upload, User } from 'lucide-react'
+import { ChevronLeft, User, Upload, Save } from 'lucide-react'
 import { useToast } from '@/components/ui/use-toast'
 
 export default function ClientProfileCreatePage() {
   const router = useRouter()
   const { toast } = useToast()
   
+  // Current user and loading state
+  const [user, setUser] = useState<any>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [isSaving, setIsSaving] = useState(false)
-  const [user, setUser] = useState<any>(null)
-  const [profile, setProfile] = useState<any>(null)
   
   // Form state
   const [fullName, setFullName] = useState('')
@@ -28,9 +28,29 @@ export default function ClientProfileCreatePage() {
   const [country, setCountry] = useState('')
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null)
   const [avatarFile, setAvatarFile] = useState<File | null>(null)
+  const [profilePreferences, setProfilePreferences] = useState<string[]>([])
   
   // Form validation
-  const [errors, setErrors] = useState<Record<string, string>>({})
+  const [errors, setErrors] = useState<{
+    fullName?: string;
+    phone?: string;
+    city?: string;
+    state?: string;
+  }>({})
+  
+  // Tattoo style options for preferences
+  const styleOptions = [
+    { id: 'traditional', label: 'Traditional' },
+    { id: 'neo-traditional', label: 'Neo Traditional' },
+    { id: 'japanese', label: 'Japanese' },
+    { id: 'realism', label: 'Realism' },
+    { id: 'blackwork', label: 'Blackwork' },
+    { id: 'tribal', label: 'Tribal' },
+    { id: 'new-school', label: 'New School' },
+    { id: 'minimalist', label: 'Minimalist' },
+    { id: 'watercolor', label: 'Watercolor' },
+    { id: 'geometric', label: 'Geometric' },
+  ]
   
   useEffect(() => {
     const checkAuth = async () => {
@@ -47,31 +67,23 @@ export default function ClientProfileCreatePage() {
         
         setUser(user)
         
-        // Check if user has selected the client profile type
-        const { data: existingProfile } = await supabase
+        // Check if user is actually set to be a client type
+        const { data: profile } = await supabase
           .from('profiles')
-          .select('*')
+          .select('user_type, full_name, phone, avatar_url')
           .eq('id', user.id)
           .single()
         
-        if (!existingProfile) {
-          // No profile found, redirect to profile type selection
+        if (!profile || profile.user_type !== 'client') {
+          // User is not set as a client, redirect to profile creation
           router.push('/profile/create')
           return
         }
         
-        if (existingProfile.user_type !== 'client') {
-          // User has not selected client profile type, redirect to profile type selection
-          router.push('/profile/create')
-          return
-        }
-        
-        setProfile(existingProfile)
-        
-        // Pre-fill form fields if data exists
-        if (existingProfile.full_name) setFullName(existingProfile.full_name)
-        if (existingProfile.phone) setPhone(existingProfile.phone)
-        if (existingProfile.avatar_url) setAvatarUrl(existingProfile.avatar_url)
+        // Set initial form data if profile has some data
+        if (profile.full_name) setFullName(profile.full_name)
+        if (profile.phone) setPhone(profile.phone)
+        if (profile.avatar_url) setAvatarUrl(profile.avatar_url)
         
         // Check if client profile already exists
         const { data: clientProfile } = await supabase
@@ -81,12 +93,18 @@ export default function ClientProfileCreatePage() {
           .single()
         
         if (clientProfile) {
-          // Pre-fill form fields if data exists
+          // Pre-fill the form with existing data
           if (clientProfile.address) setAddress(clientProfile.address)
           if (clientProfile.city) setCity(clientProfile.city)
           if (clientProfile.state) setState(clientProfile.state)
           if (clientProfile.postal_code) setPostalCode(clientProfile.postal_code)
           if (clientProfile.country) setCountry(clientProfile.country)
+          if (clientProfile.preferences && typeof clientProfile.preferences === 'object') {
+            // Handle preferences JSON data
+            if (clientProfile.preferences.styles) {
+              setProfilePreferences(clientProfile.preferences.styles as string[])
+            }
+          }
         }
       } catch (error) {
         console.error('Error checking authentication:', error)
@@ -99,76 +117,84 @@ export default function ClientProfileCreatePage() {
   }, [router])
   
   const validateForm = () => {
-    const newErrors: Record<string, string> = {}
+    const newErrors: any = {}
     
     if (!fullName.trim()) {
-      newErrors.fullName = 'Full name is required'
+      newErrors.fullName = 'Name is required'
     }
     
-    if (phone && !/^\+?[0-9()-\s]+$/.test(phone)) {
-      newErrors.phone = 'Please enter a valid phone number'
+    if (phone && !/^\+?[0-9\s\-()]+$/.test(phone)) {
+      newErrors.phone = 'Invalid phone number format'
     }
     
     if (!city.trim()) {
       newErrors.city = 'City is required'
     }
     
-    if (!country.trim()) {
-      newErrors.country = 'Country is required'
+    if (!state.trim()) {
+      newErrors.state = 'State/Province is required'
     }
     
     setErrors(newErrors)
     return Object.keys(newErrors).length === 0
   }
   
-  const handleAvatarChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (!e.target.files || e.target.files.length === 0) {
-      return
-    }
-    
-    const file = e.target.files[0]
-    setAvatarFile(file)
-    
-    // Display preview
-    const reader = new FileReader()
-    reader.onload = (event) => {
-      if (event.target?.result) {
-        setAvatarUrl(event.target.result as string)
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files[0]) {
+      const file = e.target.files[0]
+      
+      if (file.size > 5 * 1024 * 1024) {
+        toast({
+          title: "File too large",
+          description: "Profile picture must be less than 5MB",
+          variant: "destructive"
+        })
+        return
       }
+      
+      if (!file.type.startsWith('image/')) {
+        toast({
+          title: "Invalid file type",
+          description: "Please upload an image file",
+          variant: "destructive"
+        })
+        return
+      }
+      
+      setAvatarFile(file)
+      
+      // Create a preview
+      const reader = new FileReader()
+      reader.onloadend = () => {
+        setAvatarUrl(reader.result as string)
+      }
+      reader.readAsDataURL(file)
     }
-    reader.readAsDataURL(file)
   }
   
   const uploadAvatar = async () => {
     if (!avatarFile || !user) return null
     
-    try {
-      // Generate a unique file path
-      const fileExt = avatarFile.name.split('.').pop()
-      const filePath = `avatars/${user.id}-${Math.random().toString(36).substring(2)}.${fileExt}`
-      
-      // Upload the file
-      const { error: uploadError } = await supabase.storage
-        .from('profiles')
-        .upload(filePath, avatarFile)
-      
-      if (uploadError) throw uploadError
-      
-      // Get the public URL
-      const { data } = supabase.storage
-        .from('profiles')
-        .getPublicUrl(filePath)
-      
-      return data.publicUrl
-    } catch (error) {
-      console.error('Error uploading avatar:', error)
-      toast({
-        title: 'Upload Error',
-        description: 'Failed to upload profile picture. Please try again.',
-        variant: 'destructive',
+    // Upload the file to Supabase Storage
+    const fileName = `${user.id}_${Date.now()}.${avatarFile.name.split('.').pop()}`
+    
+    const { data, error } = await supabase.storage
+      .from('avatars')
+      .upload(fileName, avatarFile, {
+        upsert: true,
       })
+    
+    if (error) {
+      console.error('Error uploading avatar:', error)
       return null
     }
+    
+    // Get the public URL for the file
+    const { data: publicUrl } = supabase.storage
+      .from('avatars')
+      .getPublicUrl(fileName)
+    
+    return publicUrl.publicUrl
   }
   
   const handleSubmit = async (e: React.FormEvent) => {
@@ -179,8 +205,8 @@ export default function ClientProfileCreatePage() {
     setIsSaving(true)
     
     try {
-      // Upload avatar if selected
-      let avatarPublicUrl = profile?.avatar_url
+      // Upload avatar if a new one is selected
+      let avatarPublicUrl = avatarUrl
       if (avatarFile) {
         const uploadedUrl = await uploadAvatar()
         if (uploadedUrl) {
@@ -188,12 +214,12 @@ export default function ClientProfileCreatePage() {
         }
       }
       
-      // Update profile in the profiles table
+      // Update profiles table
       const { error: profileError } = await supabase
         .from('profiles')
         .update({
           full_name: fullName,
-          phone: phone,
+          phone,
           avatar_url: avatarPublicUrl,
           updated_at: new Date().toISOString()
         })
@@ -201,49 +227,27 @@ export default function ClientProfileCreatePage() {
       
       if (profileError) throw profileError
       
-      // Check if client profile exists
-      const { data: existingClientProfile } = await supabase
+      // Create or update client_profiles table
+      const { error: clientProfileError } = await supabase
         .from('client_profiles')
-        .select('id')
-        .eq('id', user.id)
-        .single()
+        .upsert({
+          id: user.id,
+          address,
+          city,
+          state,
+          postal_code: postalCode,
+          country,
+          preferences: {
+            styles: profilePreferences
+          },
+          updated_at: new Date().toISOString()
+        })
       
-      if (existingClientProfile) {
-        // Update client profile
-        const { error: clientError } = await supabase
-          .from('client_profiles')
-          .update({
-            address,
-            city,
-            state,
-            postal_code: postalCode,
-            country,
-            updated_at: new Date().toISOString()
-          })
-          .eq('id', user.id)
-        
-        if (clientError) throw clientError
-      } else {
-        // Create client profile
-        const { error: clientError } = await supabase
-          .from('client_profiles')
-          .insert({
-            id: user.id,
-            address,
-            city,
-            state,
-            postal_code: postalCode,
-            country,
-            created_at: new Date().toISOString(),
-            updated_at: new Date().toISOString()
-          })
-        
-        if (clientError) throw clientError
-      }
+      if (clientProfileError) throw clientProfileError
       
       toast({
-        title: 'Profile Created',
-        description: 'Your client profile has been successfully created!',
+        title: "Profile created",
+        description: "Your client profile has been created successfully.",
       })
       
       // Redirect to dashboard
@@ -251,12 +255,20 @@ export default function ClientProfileCreatePage() {
     } catch (error) {
       console.error('Error saving profile:', error)
       toast({
-        title: 'Save Error',
-        description: 'Failed to save your profile. Please try again.',
-        variant: 'destructive',
+        title: "Error",
+        description: "There was an error saving your profile. Please try again.",
+        variant: "destructive"
       })
     } finally {
       setIsSaving(false)
+    }
+  }
+  
+  const togglePreference = (styleId: string) => {
+    if (profilePreferences.includes(styleId)) {
+      setProfilePreferences(profilePreferences.filter(id => id !== styleId))
+    } else {
+      setProfilePreferences([...profilePreferences, styleId])
     }
   }
   
@@ -268,7 +280,7 @@ export default function ClientProfileCreatePage() {
     )
   }
   
-  if (!user || !profile) {
+  if (!user) {
     return (
       <div className="container mx-auto px-4 py-8 text-center">
         <h1 className="text-2xl font-bold mb-4">Authentication required</h1>
@@ -293,68 +305,64 @@ export default function ClientProfileCreatePage() {
             </Link>
           </Button>
           
-          <h1 className="text-3xl font-bold mb-2">Create Client Profile</h1>
+          <h1 className="text-3xl font-bold mb-4">Create Client Profile</h1>
           <p className="text-gray-600 dark:text-gray-300">
-            Complete your profile to start booking tattoo appointments.
+            Please fill out the information below to complete your profile.
           </p>
         </div>
         
         <form onSubmit={handleSubmit} className="space-y-6">
-          {/* Profile Image */}
-          <div className="flex flex-col items-center mb-8">
-            <div className="relative mb-4">
+          {/* Avatar Upload */}
+          <div className="flex flex-col items-center">
+            <div className="mb-4 relative w-32 h-32">
               {avatarUrl ? (
-                <div className="relative w-32 h-32 rounded-full overflow-hidden">
+                <div className="w-full h-full rounded-full overflow-hidden">
                   <Image
                     src={avatarUrl}
-                    alt={fullName || 'Profile'}
+                    alt="Profile"
                     fill
                     className="object-cover"
                   />
                 </div>
               ) : (
-                <div className="w-32 h-32 rounded-full bg-gray-200 dark:bg-gray-800 flex items-center justify-center">
-                  <User className="h-12 w-12 text-gray-400" />
+                <div className="w-full h-full rounded-full bg-gray-200 dark:bg-gray-800 flex items-center justify-center">
+                  <User className="h-12 w-12 text-gray-500 dark:text-gray-400" />
                 </div>
               )}
-              
-              <label
-                htmlFor="avatar-upload"
-                className="absolute bottom-0 right-0 w-8 h-8 rounded-full bg-primary flex items-center justify-center cursor-pointer text-white"
-              >
-                <Upload className="h-4 w-4" />
-                <input
-                  type="file"
-                  id="avatar-upload"
-                  accept="image/*"
-                  className="sr-only"
-                  onChange={handleAvatarChange}
-                />
-              </label>
             </div>
-            <p className="text-sm text-gray-500 dark:text-gray-400">
-              Upload a profile picture (optional)
-            </p>
+            
+            <div>
+              <input
+                type="file"
+                id="avatar"
+                accept="image/*"
+                className="hidden"
+                onChange={handleFileChange}
+              />
+              <Button type="button" variant="outline" onClick={() => document.getElementById('avatar')?.click()}>
+                <Upload className="mr-2 h-4 w-4" />
+                Upload Profile Picture
+              </Button>
+            </div>
           </div>
           
-          {/* Personal Information */}
-          <div className="bg-white dark:bg-gray-950 rounded-lg border p-6">
-            <h2 className="text-xl font-semibold mb-4">Personal Information</h2>
+          {/* Basic Information */}
+          <div className="bg-white dark:bg-gray-950 rounded-lg border shadow-sm p-6">
+            <h2 className="text-xl font-semibold mb-4">Basic Information</h2>
             
             <div className="space-y-4">
               <div>
-                <label htmlFor="full-name" className="block text-sm font-medium mb-1">
-                  Full Name*
+                <label htmlFor="fullName" className="block text-sm font-medium mb-1">
+                  Full Name<span className="text-red-500">*</span>
                 </label>
                 <input
                   type="text"
-                  id="full-name"
+                  id="fullName"
                   className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-primary ${
-                    errors.fullName ? 'border-red-500' : ''
+                    errors.fullName ? 'border-red-500 focus:ring-red-500' : ''
                   }`}
                   value={fullName}
                   onChange={(e) => setFullName(e.target.value)}
-                  required
                 />
                 {errors.fullName && (
                   <p className="mt-1 text-sm text-red-500">{errors.fullName}</p>
@@ -363,13 +371,13 @@ export default function ClientProfileCreatePage() {
               
               <div>
                 <label htmlFor="phone" className="block text-sm font-medium mb-1">
-                  Phone Number
+                  Phone
                 </label>
                 <input
                   type="tel"
                   id="phone"
                   className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-primary ${
-                    errors.phone ? 'border-red-500' : ''
+                    errors.phone ? 'border-red-500 focus:ring-red-500' : ''
                   }`}
                   value={phone}
                   onChange={(e) => setPhone(e.target.value)}
@@ -377,16 +385,13 @@ export default function ClientProfileCreatePage() {
                 {errors.phone && (
                   <p className="mt-1 text-sm text-red-500">{errors.phone}</p>
                 )}
-                <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
-                  We'll only use this for appointment reminders (optional)
-                </p>
               </div>
             </div>
           </div>
           
-          {/* Location Information */}
-          <div className="bg-white dark:bg-gray-950 rounded-lg border p-6">
-            <h2 className="text-xl font-semibold mb-4">Location</h2>
+          {/* Address Information */}
+          <div className="bg-white dark:bg-gray-950 rounded-lg border shadow-sm p-6">
+            <h2 className="text-xl font-semibold mb-4">Address Information</h2>
             
             <div className="space-y-4">
               <div>
@@ -402,20 +407,19 @@ export default function ClientProfileCreatePage() {
                 />
               </div>
               
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
                   <label htmlFor="city" className="block text-sm font-medium mb-1">
-                    City*
+                    City<span className="text-red-500">*</span>
                   </label>
                   <input
                     type="text"
                     id="city"
                     className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-primary ${
-                      errors.city ? 'border-red-500' : ''
+                      errors.city ? 'border-red-500 focus:ring-red-500' : ''
                     }`}
                     value={city}
                     onChange={(e) => setCity(e.target.value)}
-                    required
                   />
                   {errors.city && (
                     <p className="mt-1 text-sm text-red-500">{errors.city}</p>
@@ -424,26 +428,31 @@ export default function ClientProfileCreatePage() {
                 
                 <div>
                   <label htmlFor="state" className="block text-sm font-medium mb-1">
-                    State/Province
+                    State/Province<span className="text-red-500">*</span>
                   </label>
                   <input
                     type="text"
                     id="state"
-                    className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-primary"
+                    className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-primary ${
+                      errors.state ? 'border-red-500 focus:ring-red-500' : ''
+                    }`}
                     value={state}
                     onChange={(e) => setState(e.target.value)}
                   />
+                  {errors.state && (
+                    <p className="mt-1 text-sm text-red-500">{errors.state}</p>
+                  )}
                 </div>
               </div>
               
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
-                  <label htmlFor="postal-code" className="block text-sm font-medium mb-1">
+                  <label htmlFor="postalCode" className="block text-sm font-medium mb-1">
                     Postal Code
                   </label>
                   <input
                     type="text"
-                    id="postal-code"
+                    id="postalCode"
                     className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-primary"
                     value={postalCode}
                     onChange={(e) => setPostalCode(e.target.value)}
@@ -452,30 +461,45 @@ export default function ClientProfileCreatePage() {
                 
                 <div>
                   <label htmlFor="country" className="block text-sm font-medium mb-1">
-                    Country*
+                    Country
                   </label>
                   <input
                     type="text"
                     id="country"
-                    className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-primary ${
-                      errors.country ? 'border-red-500' : ''
-                    }`}
+                    className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-primary"
                     value={country}
                     onChange={(e) => setCountry(e.target.value)}
-                    required
                   />
-                  {errors.country && (
-                    <p className="mt-1 text-sm text-red-500">{errors.country}</p>
-                  )}
                 </div>
               </div>
-              
-              <p className="text-xs text-gray-500 dark:text-gray-400">
-                Your location helps us find nearby artists and studios
-              </p>
             </div>
           </div>
           
+          {/* Preferences */}
+          <div className="bg-white dark:bg-gray-950 rounded-lg border shadow-sm p-6">
+            <h2 className="text-xl font-semibold mb-4">Tattoo Style Preferences</h2>
+            <p className="text-gray-600 dark:text-gray-400 mb-4">
+              Select the tattoo styles you're interested in (optional)
+            </p>
+            
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+              {styleOptions.map(style => (
+                <div
+                  key={style.id}
+                  onClick={() => togglePreference(style.id)}
+                  className={`px-4 py-2 rounded-md border cursor-pointer text-center transition-colors
+                    ${profilePreferences.includes(style.id)
+                      ? 'bg-primary/10 border-primary'
+                      : 'hover:bg-gray-50 dark:hover:bg-gray-900'
+                    }`}
+                >
+                  {style.label}
+                </div>
+              ))}
+            </div>
+          </div>
+          
+          {/* Submit Button */}
           <div className="flex justify-end">
             <Button type="submit" size="lg" disabled={isSaving}>
               {isSaving ? (
@@ -486,7 +510,7 @@ export default function ClientProfileCreatePage() {
               ) : (
                 <>
                   <Save className="mr-2 h-4 w-4" />
-                  Create Profile
+                  Save Profile
                 </>
               )}
             </Button>
