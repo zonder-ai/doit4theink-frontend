@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Button } from '@/components/ui/button'
-import { Search as SearchIcon, Filter, ChevronUp, ChevronDown, X } from 'lucide-react'
+import { Search as SearchIcon, Filter, ChevronUp, ChevronDown, X, SortAsc } from 'lucide-react'
 import DesignCard from '@/components/design-card'
 import ArtistCard from '@/components/artist-card'
 import StudioCard from '@/components/studio-card'
@@ -17,10 +17,12 @@ export default function SearchPage() {
   // Get search query and tab from URL
   const query = searchParams.get('q') || ''
   const initialTab = searchParams.get('tab') || 'designs'
+  const initialSort = searchParams.get('sort') || 'newest'
   
   const [activeTab, setActiveTab] = useState(initialTab)
   const [searchTerm, setSearchTerm] = useState(query)
   const [showFilters, setShowFilters] = useState(false)
+  const [sortBy, setSortBy] = useState(initialSort)
   
   // Results
   const [designs, setDesigns] = useState<any[]>([])
@@ -49,6 +51,41 @@ export default function SearchPage() {
   const [artistsPage, setArtistsPage] = useState(1)
   const [studiosPage, setStudiosPage] = useState(1)
   
+  // Sort options
+  const designSortOptions = [
+    { value: 'newest', label: 'Newest First' },
+    { value: 'price_low', label: 'Price: Low to High' },
+    { value: 'price_high', label: 'Price: High to Low' },
+    { value: 'popular', label: 'Most Popular' }
+  ]
+  
+  const artistSortOptions = [
+    { value: 'rating', label: 'Highest Rated' },
+    { value: 'experience', label: 'Most Experienced' },
+    { value: 'name_asc', label: 'Name: A to Z' },
+    { value: 'name_desc', label: 'Name: Z to A' }
+  ]
+  
+  const studioSortOptions = [
+    { value: 'name_asc', label: 'Name: A to Z' },
+    { value: 'name_desc', label: 'Name: Z to A' },
+    { value: 'artists', label: 'Most Artists' }
+  ]
+  
+  // Get current sort options based on active tab
+  const getCurrentSortOptions = () => {
+    switch (activeTab) {
+      case 'designs':
+        return designSortOptions
+      case 'artists':
+        return artistSortOptions
+      case 'studios':
+        return studioSortOptions
+      default:
+        return designSortOptions
+    }
+  }
+  
   // Load filter options on initial load
   useEffect(() => {
     const loadFilterOptions = async () => {
@@ -72,8 +109,22 @@ export default function SearchPage() {
       const params = new URLSearchParams(searchParams.toString())
       params.set('tab', activeTab)
       router.push(`/search?${params.toString()}`)
+      
+      // Reset sort to default for the new tab
+      if (activeTab === 'designs') setSortBy('newest')
+      if (activeTab === 'artists') setSortBy('rating')
+      if (activeTab === 'studios') setSortBy('name_asc')
     }
   }, [activeTab, initialTab, router, searchParams])
+  
+  // Update URL when sort changes
+  useEffect(() => {
+    if (sortBy !== initialSort) {
+      const params = new URLSearchParams(searchParams.toString())
+      params.set('sort', sortBy)
+      router.push(`/search?${params.toString()}`)
+    }
+  }, [sortBy, initialSort, router, searchParams])
   
   // Load search results when query changes
   useEffect(() => {
@@ -88,6 +139,7 @@ export default function SearchPage() {
           page: 1,
           limit: 12,
           searchTerm: query,
+          sortBy: activeTab === 'designs' ? sortBy : 'newest'
         })
         
         setDesigns(designsResults || [])
@@ -106,8 +158,29 @@ export default function SearchPage() {
           artist.artist_name?.toLowerCase().includes(query.toLowerCase())
         )
         
-        setArtists(filteredArtists || [])
-        setTotalArtists(filteredArtists.length || 0)
+        // Apply sorting to artists
+        let sortedArtists = [...filteredArtists]
+        if (activeTab === 'artists') {
+          switch (sortBy) {
+            case 'rating':
+              sortedArtists.sort((a, b) => (b.average_rating || 0) - (a.average_rating || 0))
+              break
+            case 'experience':
+              sortedArtists.sort((a, b) => (b.years_experience || 0) - (a.years_experience || 0))
+              break
+            case 'name_asc':
+              sortedArtists.sort((a, b) => (a.artist_name || '').localeCompare(b.artist_name || ''))
+              break
+            case 'name_desc':
+              sortedArtists.sort((a, b) => (b.artist_name || '').localeCompare(a.artist_name || ''))
+              break
+            default:
+              break
+          }
+        }
+        
+        setArtists(sortedArtists || [])
+        setTotalArtists(sortedArtists.length || 0)
         setArtistsPage(1)
         
         // Search studios
@@ -122,8 +195,26 @@ export default function SearchPage() {
           studio.name?.toLowerCase().includes(query.toLowerCase())
         )
         
-        setStudios(filteredStudios || [])
-        setTotalStudios(filteredStudios.length || 0)
+        // Apply sorting to studios
+        let sortedStudios = [...filteredStudios]
+        if (activeTab === 'studios') {
+          switch (sortBy) {
+            case 'name_asc':
+              sortedStudios.sort((a, b) => a.name.localeCompare(b.name))
+              break
+            case 'name_desc':
+              sortedStudios.sort((a, b) => b.name.localeCompare(a.name))
+              break
+            case 'artists':
+              sortedStudios.sort((a, b) => (b.studio_artists?.length || 0) - (a.studio_artists?.length || 0))
+              break
+            default:
+              break
+          }
+        }
+        
+        setStudios(sortedStudios || [])
+        setTotalStudios(sortedStudios.length || 0)
         setStudiosPage(1)
       } catch (error) {
         console.error('Error loading search results:', error)
@@ -133,7 +224,7 @@ export default function SearchPage() {
     }
     
     loadSearchResults()
-  }, [query])
+  }, [query, activeTab, sortBy])
   
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault()
@@ -144,6 +235,10 @@ export default function SearchPage() {
     params.set('q', searchTerm)
     params.set('tab', activeTab)
     router.push(`/search?${params.toString()}`)
+  }
+  
+  const handleSortChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    setSortBy(e.target.value)
   }
   
   const applyDesignFilters = async () => {
@@ -159,6 +254,7 @@ export default function SearchPage() {
         maxPrice,
         isColor,
         searchTerm: query || undefined,
+        sortBy
       })
       
       setDesigns(filteredDesigns || [])
@@ -189,11 +285,29 @@ export default function SearchPage() {
       })
       
       // Further filter by name if query is present
-      const nameFilteredArtists = query
+      let nameFilteredArtists = query
         ? filteredArtists.filter((artist: any) => 
             artist.artist_name?.toLowerCase().includes(query.toLowerCase())
           )
         : filteredArtists
+      
+      // Apply sorting
+      switch (sortBy) {
+        case 'rating':
+          nameFilteredArtists.sort((a, b) => (b.average_rating || 0) - (a.average_rating || 0))
+          break
+        case 'experience':
+          nameFilteredArtists.sort((a, b) => (b.years_experience || 0) - (a.years_experience || 0))
+          break
+        case 'name_asc':
+          nameFilteredArtists.sort((a, b) => (a.artist_name || '').localeCompare(b.artist_name || ''))
+          break
+        case 'name_desc':
+          nameFilteredArtists.sort((a, b) => (b.artist_name || '').localeCompare(a.artist_name || ''))
+          break
+        default:
+          break
+      }
       
       setArtists(nameFilteredArtists || [])
       setTotalArtists(nameFilteredArtists.length || 0)
@@ -221,11 +335,26 @@ export default function SearchPage() {
       })
       
       // Further filter by name if query is present
-      const nameFilteredStudios = query
+      let nameFilteredStudios = query
         ? filteredStudios.filter((studio: any) => 
             studio.name?.toLowerCase().includes(query.toLowerCase())
           )
         : filteredStudios
+      
+      // Apply sorting
+      switch (sortBy) {
+        case 'name_asc':
+          nameFilteredStudios.sort((a, b) => a.name.localeCompare(b.name))
+          break
+        case 'name_desc':
+          nameFilteredStudios.sort((a, b) => b.name.localeCompare(a.name))
+          break
+        case 'artists':
+          nameFilteredStudios.sort((a, b) => (b.studio_artists?.length || 0) - (a.studio_artists?.length || 0))
+          break
+        default:
+          break
+      }
       
       setStudios(nameFilteredStudios || [])
       setTotalStudios(nameFilteredStudios.length || 0)
@@ -283,6 +412,7 @@ export default function SearchPage() {
         maxPrice,
         isColor,
         searchTerm: query || undefined,
+        sortBy
       })
       
       setDesigns(prevDesigns => [...prevDesigns, ...moreDesigns])
@@ -309,11 +439,29 @@ export default function SearchPage() {
       })
       
       // Filter by name if query is present
-      const filteredMoreArtists = query
+      let filteredMoreArtists = query
         ? moreArtists.filter((artist: any) => 
             artist.artist_name?.toLowerCase().includes(query.toLowerCase())
           )
         : moreArtists
+      
+      // Apply sorting
+      switch (sortBy) {
+        case 'rating':
+          filteredMoreArtists.sort((a, b) => (b.average_rating || 0) - (a.average_rating || 0))
+          break
+        case 'experience':
+          filteredMoreArtists.sort((a, b) => (b.years_experience || 0) - (a.years_experience || 0))
+          break
+        case 'name_asc':
+          filteredMoreArtists.sort((a, b) => (a.artist_name || '').localeCompare(b.artist_name || ''))
+          break
+        case 'name_desc':
+          filteredMoreArtists.sort((a, b) => (b.artist_name || '').localeCompare(a.artist_name || ''))
+          break
+        default:
+          break
+      }
       
       setArtists(prevArtists => [...prevArtists, ...filteredMoreArtists])
       setArtistsPage(nextPage)
@@ -337,11 +485,26 @@ export default function SearchPage() {
       })
       
       // Filter by name if query is present
-      const filteredMoreStudios = query
+      let filteredMoreStudios = query
         ? moreStudios.filter((studio: any) => 
             studio.name?.toLowerCase().includes(query.toLowerCase())
           )
         : moreStudios
+      
+      // Apply sorting
+      switch (sortBy) {
+        case 'name_asc':
+          filteredMoreStudios.sort((a, b) => a.name.localeCompare(b.name))
+          break
+        case 'name_desc':
+          filteredMoreStudios.sort((a, b) => b.name.localeCompare(a.name))
+          break
+        case 'artists':
+          filteredMoreStudios.sort((a, b) => (b.studio_artists?.length || 0) - (a.studio_artists?.length || 0))
+          break
+        default:
+          break
+      }
       
       setStudios(prevStudios => [...prevStudios, ...filteredMoreStudios])
       setStudiosPage(nextPage)
@@ -351,6 +514,25 @@ export default function SearchPage() {
       setIsLoading(false)
     }
   }
+  
+  // Store search in recent searches (localStorage)
+  useEffect(() => {
+    if (!query) return
+    
+    try {
+      // Get existing recent searches
+      const recentSearchesJson = localStorage.getItem('recentSearches')
+      const recentSearches = recentSearchesJson ? JSON.parse(recentSearchesJson) : []
+      
+      // Add the current search term if it doesn't exist
+      if (!recentSearches.includes(query)) {
+        const updatedSearches = [query, ...recentSearches.slice(0, 4)] // Keep last 5 searches
+        localStorage.setItem('recentSearches', JSON.stringify(updatedSearches))
+      }
+    } catch (error) {
+      console.error('Error storing recent searches:', error)
+    }
+  }, [query])
   
   return (
     <div className="container mx-auto px-4 py-8">
@@ -373,6 +555,38 @@ export default function SearchPage() {
             Search
           </Button>
         </form>
+        
+        {/* Recent Searches */}
+        {query && (
+          <div className="mb-6">
+            <h2 className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-2">Recent Searches</h2>
+            <div className="flex flex-wrap gap-2">
+              {(() => {
+                try {
+                  const recentSearchesJson = localStorage.getItem('recentSearches')
+                  const recentSearches = recentSearchesJson ? JSON.parse(recentSearchesJson) : []
+                  
+                  return recentSearches.map((term: string, index: number) => (
+                    <button
+                      key={index}
+                      onClick={() => {
+                        setSearchTerm(term)
+                        const params = new URLSearchParams(searchParams.toString())
+                        params.set('q', term)
+                        router.push(`/search?${params.toString()}`)
+                      }}
+                      className="px-3 py-1 text-sm bg-gray-100 hover:bg-gray-200 dark:bg-gray-800 dark:hover:bg-gray-700 rounded-full"
+                    >
+                      {term}
+                    </button>
+                  ))
+                } catch (error) {
+                  return null
+                }
+              })()}
+            </div>
+          </div>
+        )}
         
         {/* Search Results */}
         <Tabs
@@ -407,6 +621,27 @@ export default function SearchPage() {
               </Button>
             </div>
           </div>
+          
+          {/* Sort Controls */}
+          {(designs.length > 0 || artists.length > 0 || studios.length > 0) && (
+            <div className="flex justify-end mb-4">
+              <div className="flex items-center">
+                <SortAsc className="mr-2 h-4 w-4 text-gray-500" />
+                <span className="text-sm mr-2">Sort:</span>
+                <select
+                  value={sortBy}
+                  onChange={handleSortChange}
+                  className="px-2 py-1 border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+                >
+                  {getCurrentSortOptions().map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+          )}
           
           <div className="flex flex-col md:flex-row gap-6">
             {/* Filters Sidebar */}
@@ -507,6 +742,24 @@ export default function SearchPage() {
                         />
                         <span className="ml-2 text-sm">Any</span>
                       </label>
+                    </div>
+                  </div>
+                  
+                  {/* Styles */}
+                  <div className="mb-6">
+                    <h3 className="text-sm font-medium mb-2">Styles</h3>
+                    <div className="space-y-2 max-h-48 overflow-y-auto">
+                      {styles.map((style) => (
+                        <label key={style.id} className="flex items-center">
+                          <input
+                            type="checkbox"
+                            className="form-checkbox"
+                            checked={selectedStyles.includes(style.id)}
+                            onChange={() => toggleStyle(style.id)}
+                          />
+                          <span className="ml-2 text-sm">{style.name}</span>
+                        </label>
+                      ))}
                     </div>
                   </div>
                   
