@@ -1,280 +1,381 @@
 "use client"
 
 import { useState, useEffect } from 'react'
-import { useSearchParams } from 'next/navigation'
-import { ChevronDown, ChevronUp, Filter, X, Star } from 'lucide-react'
-import { Button } from '@/components/ui/button'
-import ArtistCard from '@/components/artist-card'
+import Link from 'next/link'
+import Image from 'next/image'
 import { fetchArtists, fetchStyles } from '@/lib/supabase'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Slider } from '@/components/ui/slider'
+import { Checkbox } from '@/components/ui/checkbox'
+import {
+  Card,
+  CardContent,
+  CardFooter,
+  CardHeader,
+  CardTitle,
+} from '@/components/ui/card'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
+import {
+  Accordion,
+  AccordionContent,
+  AccordionItem,
+  AccordionTrigger,
+} from '@/components/ui/accordion'
+import { Badge } from '@/components/ui/badge'
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
+import { 
+  Search, 
+  Filter, 
+  Trash, 
+  Loader2, 
+  MapPin, 
+  Star, 
+  Instagram, 
+  ExternalLink,
+  User,
+  PaintBrush
+} from 'lucide-react'
 
 export default function ArtistsPage() {
-  const searchParams = useSearchParams()
+  // State for artists and pagination
   const [artists, setArtists] = useState<any[]>([])
+  const [loading, setLoading] = useState(true)
   const [totalArtists, setTotalArtists] = useState(0)
+  const [currentPage, setCurrentPage] = useState(1)
   const [styles, setStyles] = useState<any[]>([])
-  const [isLoading, setIsLoading] = useState(true)
-  const [showFilters, setShowFilters] = useState(false)
   
-  // Filter states
+  // State for filters
+  const [searchTerm, setSearchTerm] = useState('')
   const [selectedStyles, setSelectedStyles] = useState<string[]>([])
+  const [minRating, setMinRating] = useState<number | null>(null)
   const [location, setLocation] = useState('')
-  const [minRating, setMinRating] = useState<number | undefined>(undefined)
-  const [page, setPage] = useState(1)
+  const [isFilterOpen, setIsFilterOpen] = useState(false)
+  
+  const ITEMS_PER_PAGE = 12
   
   useEffect(() => {
-    // Check for search parameters
-    const styleParam = searchParams.get('style')
-    const locationParam = searchParams.get('location')
-    const ratingParam = searchParams.get('rating')
-    
-    if (styleParam) setSelectedStyles(styleParam.split(','))
-    if (locationParam) setLocation(locationParam)
-    if (ratingParam) setMinRating(Number(ratingParam))
-    
-    // Load artists and styles
-    const loadData = async () => {
-      setIsLoading(true)
-      
-      try {
-        // Fetch styles for filter options
-        const stylesData = await fetchStyles()
-        setStyles(stylesData)
-        
-        // Fetch artists with applied filters
-        const { artists, total } = await fetchArtists({
-          page: 1,
-          limit: 12,
-          styleIds: styleParam ? styleParam.split(',') : [],
-          location: locationParam || undefined,
-          minRating: ratingParam ? Number(ratingParam) : undefined,
-        })
-        
-        setArtists(artists)
-        setTotalArtists(total)
-        setPage(1)
-      } catch (error) {
-        console.error('Error loading data:', error)
-      } finally {
-        setIsLoading(false)
-      }
+    // Fetch styles on mount
+    const loadStyles = async () => {
+      const stylesData = await fetchStyles()
+      setStyles(stylesData)
     }
     
-    loadData()
-  }, [searchParams])
+    loadStyles()
+  }, [])
   
-  const loadMoreArtists = async () => {
-    setIsLoading(true)
-    
-    try {
-      const nextPage = page + 1
+  useEffect(() => {
+    // Fetch artists whenever filters change
+    const loadArtists = async () => {
+      setLoading(true)
       
-      const { artists: moreArtists } = await fetchArtists({
-        page: nextPage,
-        limit: 12,
-        styleIds: selectedStyles,
-        location: location || undefined,
+      const styleIds = selectedStyles.length > 0 ? styles
+        .filter(style => selectedStyles.includes(style.name))
+        .map(style => style.id) : []
+      
+      const { artists, total } = await fetchArtists({
+        page: currentPage,
+        limit: ITEMS_PER_PAGE,
+        styleIds,
         minRating,
+        location,
       })
       
-      setArtists(prevArtists => [...prevArtists, ...moreArtists])
-      setPage(nextPage)
-    } catch (error) {
-      console.error('Error loading more artists:', error)
-    } finally {
-      setIsLoading(false)
-    }
-  }
-  
-  const applyFilters = async () => {
-    setIsLoading(true)
-    
-    try {
-      const { artists: filteredArtists, total } = await fetchArtists({
-        page: 1,
-        limit: 12,
-        styleIds: selectedStyles,
-        location: location || undefined,
-        minRating,
-      })
-      
-      setArtists(filteredArtists)
+      setArtists(artists)
       setTotalArtists(total)
-      setPage(1)
-      
-      // On mobile, close filters after applying
-      if (window.innerWidth < 768) {
-        setShowFilters(false)
+      setLoading(false)
+    }
+    
+    loadArtists()
+  }, [currentPage, selectedStyles, minRating, location, styles])
+  
+  const handleSearchSubmit = (e: React.FormEvent) => {
+    e.preventDefault()
+    const searchInput = document.getElementById('search-artists') as HTMLInputElement
+    setSearchTerm(searchInput.value)
+    // In a real implementation, you might want to include searchTerm in your fetchArtists call
+    setCurrentPage(1)
+  }
+  
+  const handleStyleSelect = (styleName: string) => {
+    setSelectedStyles(prev => {
+      if (prev.includes(styleName)) {
+        return prev.filter(style => style !== styleName)
+      } else {
+        return [...prev, styleName]
       }
-    } catch (error) {
-      console.error('Error applying filters:', error)
-    } finally {
-      setIsLoading(false)
+    })
+    setCurrentPage(1)
+  }
+  
+  const handleRatingChange = (value: string) => {
+    const rating = value === 'any' ? null : parseInt(value, 10)
+    setMinRating(rating)
+    setCurrentPage(1)
+  }
+  
+  const clearAllFilters = () => {
+    setSelectedStyles([])
+    setMinRating(null)
+    setLocation('')
+    setSearchTerm('')
+    setCurrentPage(1)
+    
+    const searchInput = document.getElementById('search-artists') as HTMLInputElement
+    if (searchInput) {
+      searchInput.value = ''
     }
   }
   
-  const resetFilters = () => {
-    setSelectedStyles([])
-    setLocation('')
-    setMinRating(undefined)
-  }
+  const totalPages = Math.ceil(totalArtists / ITEMS_PER_PAGE)
   
-  const toggleStyle = (styleId: string) => {
-    setSelectedStyles(prev => 
-      prev.includes(styleId) 
-        ? prev.filter(id => id !== styleId) 
-        : [...prev, styleId]
-    )
+  function getInitials(name: string) {
+    if (!name) return 'NA'
+    return name
+      .split(' ')
+      .map(part => part[0])
+      .join('')
+      .toUpperCase()
+      .substring(0, 2)
   }
   
   return (
     <div className="container mx-auto px-4 py-8">
-      <div className="mb-8">
-        <h1 className="text-3xl font-bold mb-2">Tattoo Artists</h1>
-        <p className="text-gray-600 dark:text-gray-300">
-          Find talented tattoo artists to create your next masterpiece
-        </p>
-      </div>
-      
-      {/* Mobile Filter Toggle Button */}
-      <div className="md:hidden mb-4">
-        <Button 
-          variant="outline" 
-          className="w-full"
-          onClick={() => setShowFilters(!showFilters)}
+      <div className="flex justify-between items-center mb-8">
+        <h1 className="text-3xl font-bold">Find Tattoo Artists</h1>
+        <Button
+          variant="outline"
+          onClick={() => setIsFilterOpen(!isFilterOpen)}
+          className="md:hidden"
         >
-          <Filter className="mr-2 h-4 w-4" />
-          {showFilters ? 'Hide Filters' : 'Show Filters'}
-          {showFilters ? <ChevronUp className="ml-2 h-4 w-4" /> : <ChevronDown className="ml-2 h-4 w-4" />}
+          <Filter className="h-4 w-4 mr-2" />
+          Filters
         </Button>
       </div>
       
-      <div className="flex flex-col md:flex-row gap-6">
+      <div className="mb-8">
+        <form onSubmit={handleSearchSubmit} className="flex w-full max-w-lg space-x-2">
+          <div className="relative flex-1">
+            <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-gray-500" />
+            <Input
+              id="search-artists"
+              type="text"
+              placeholder="Search artists by name, style, or location..."
+              className="pl-8"
+              defaultValue={searchTerm}
+            />
+          </div>
+          <Button type="submit">Search</Button>
+        </form>
+      </div>
+      
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
         {/* Filters Sidebar */}
-        <div 
-          className={`w-full md:w-64 ${showFilters ? 'block' : 'hidden'} md:block transition-all duration-300 ease-in-out`}
-        >
-          <div className="bg-white dark:bg-gray-950 p-4 rounded-lg border shadow-sm">
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="text-lg font-semibold">Filters</h2>
-              <Button variant="ghost" size="sm" onClick={resetFilters}>
-                <X className="h-4 w-4 mr-1" />
-                Reset
+        <div className={`md:block ${isFilterOpen ? 'block' : 'hidden'}`}>
+          <div className="bg-white dark:bg-gray-950 rounded-lg border p-4 sticky top-4">
+            <div className="flex justify-between items-center mb-4">
+              <h2 className="font-semibold text-lg">Filters</h2>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={clearAllFilters}
+                className="text-gray-500 hover:text-red-500"
+              >
+                <Trash className="h-4 w-4 mr-1" />
+                Clear
               </Button>
             </div>
             
-            {/* Location */}
-            <div className="mb-6">
-              <label htmlFor="location" className="block text-sm font-medium mb-2">
-                Location
-              </label>
-              <input
-                type="text"
-                id="location"
-                className="w-full px-3 py-2 border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-primary"
-                placeholder="City, State or Country"
-                value={location}
-                onChange={(e) => setLocation(e.target.value)}
-              />
-            </div>
+            {/* Styles Filter */}
+            <Accordion type="single" collapsible defaultValue="styles">
+              <AccordionItem value="styles">
+                <AccordionTrigger>Tattoo Styles</AccordionTrigger>
+                <AccordionContent>
+                  <div className="space-y-2 max-h-48 overflow-y-auto">
+                    {styles.map(style => (
+                      <div key={style.id} className="flex items-center space-x-2">
+                        <Checkbox
+                          id={`style-${style.id}`}
+                          checked={selectedStyles.includes(style.name)}
+                          onCheckedChange={() => handleStyleSelect(style.name)}
+                        />
+                        <label
+                          htmlFor={`style-${style.id}`}
+                          className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 cursor-pointer"
+                        >
+                          {style.name}
+                        </label>
+                      </div>
+                    ))}
+                  </div>
+                </AccordionContent>
+              </AccordionItem>
+            </Accordion>
             
-            {/* Minimum Rating */}
-            <div className="mb-6">
-              <h3 className="text-sm font-medium mb-2">Minimum Rating</h3>
-              <div className="flex items-center">
-                {[1, 2, 3, 4, 5].map((rating) => (
-                  <button
-                    key={rating}
-                    type="button"
-                    className={`p-1 ${minRating && rating <= minRating ? 'text-yellow-400' : 'text-gray-300 dark:text-gray-600'}`}
-                    onClick={() => setMinRating(rating)}
+            {/* Rating Filter */}
+            <Accordion type="single" collapsible>
+              <AccordionItem value="rating">
+                <AccordionTrigger>Minimum Rating</AccordionTrigger>
+                <AccordionContent>
+                  <Select
+                    onValueChange={handleRatingChange}
+                    value={minRating?.toString() || 'any'}
                   >
-                    <Star className="h-6 w-6 fill-current" />
-                  </button>
-                ))}
-                {minRating && (
-                  <button
-                    className="ml-2 text-sm text-gray-500 hover:text-gray-700 dark:hover:text-gray-300"
-                    onClick={() => setMinRating(undefined)}
-                  >
-                    Clear
-                  </button>
-                )}
-              </div>
-            </div>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select rating" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="any">Any Rating</SelectItem>
+                      <SelectItem value="3">3+ Stars</SelectItem>
+                      <SelectItem value="4">4+ Stars</SelectItem>
+                      <SelectItem value="5">5 Stars</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </AccordionContent>
+              </AccordionItem>
+            </Accordion>
             
-            {/* Styles */}
-            <div className="mb-6">
-              <h3 className="text-sm font-medium mb-2">Styles</h3>
-              <div className="space-y-2 max-h-48 overflow-y-auto">
-                {styles.map((style) => (
-                  <label key={style.id} className="flex items-center">
-                    <input
-                      type="checkbox"
-                      className="form-checkbox"
-                      checked={selectedStyles.includes(style.id)}
-                      onChange={() => toggleStyle(style.id)}
-                    />
-                    <span className="ml-2 text-sm">{style.name}</span>
-                  </label>
-                ))}
-              </div>
-            </div>
-            
-            <Button onClick={applyFilters} className="w-full">
-              Apply Filters
-            </Button>
+            {/* Location Filter */}
+            <Accordion type="single" collapsible>
+              <AccordionItem value="location">
+                <AccordionTrigger>Location</AccordionTrigger>
+                <AccordionContent>
+                  <Input
+                    placeholder="City or postal code"
+                    value={location}
+                    onChange={(e) => {
+                      setLocation(e.target.value)
+                      setCurrentPage(1)
+                    }}
+                  />
+                </AccordionContent>
+              </AccordionItem>
+            </Accordion>
           </div>
         </div>
         
         {/* Artists Grid */}
-        <div className="flex-1">
-          {isLoading && artists.length === 0 ? (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {Array.from({ length: 6 }).map((_, index) => (
-                <div key={index} className="h-96 bg-gray-200 dark:bg-gray-800 rounded-lg animate-pulse"></div>
-              ))}
+        <div className="md:col-span-3">
+          {loading ? (
+            <div className="flex justify-center items-center h-64">
+              <Loader2 className="h-8 w-8 animate-spin text-primary" />
             </div>
           ) : artists.length > 0 ? (
             <>
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
                 {artists.map((artist) => (
-                  <ArtistCard
-                    key={artist.id}
-                    id={artist.id}
-                    name={artist.artist_name || 'Unknown Artist'}
-                    imageUrl={artist.profile_image_url}
-                    bio={artist.bio}
-                    yearsExperience={artist.years_experience}
-                    avgRating={artist.average_rating}
-                    location={artist.city ? `${artist.city}, ${artist.state}` : undefined}
-                    studioName={artist.primary_studio_name}
-                    isIndependent={artist.is_independent}
-                  />
+                  <Card key={artist.id} className="overflow-hidden hover:shadow-md transition-shadow">
+                    <CardHeader className="pb-2">
+                      <div className="flex items-center space-x-4">
+                        <Avatar className="h-12 w-12">
+                          <AvatarImage src={artist.avatar_url} alt={artist.artist_name} />
+                          <AvatarFallback>{getInitials(artist.artist_name)}</AvatarFallback>
+                        </Avatar>
+                        <div>
+                          <CardTitle className="text-lg">{artist.artist_name}</CardTitle>
+                          {artist.average_rating && (
+                            <div className="flex items-center">
+                              <Star className="h-3 w-3 fill-yellow-500 text-yellow-500 mr-1" />
+                              <span className="text-sm">{artist.average_rating.toFixed(1)}</span>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </CardHeader>
+                    
+                    <CardContent className="pb-2">
+                      {artist.city && (
+                        <div className="flex items-center text-sm text-gray-500 dark:text-gray-400 mb-2">
+                          <MapPin className="h-3 w-3 mr-1" />
+                          <span>{artist.city}, {artist.state || ''}</span>
+                        </div>
+                      )}
+                      
+                      {artist.bio && (
+                        <p className="text-sm line-clamp-2 mb-2">
+                          {artist.bio}
+                        </p>
+                      )}
+                      
+                      {artist.years_experience && (
+                        <Badge variant="outline" className="mb-2">
+                          {artist.years_experience} years experience
+                        </Badge>
+                      )}
+                    </CardContent>
+                    
+                    <CardFooter className="flex justify-between items-center pt-2">
+                      <div className="flex space-x-2">
+                        {artist.instagram_handle && (
+                          <a 
+                            href={`https://instagram.com/${artist.instagram_handle}`} 
+                            target="_blank" 
+                            rel="noopener noreferrer"
+                            className="text-gray-500 hover:text-gray-700 dark:hover:text-gray-300"
+                          >
+                            <Instagram className="h-4 w-4" />
+                          </a>
+                        )}
+                        
+                        {artist.portfolio_url && (
+                          <a 
+                            href={artist.portfolio_url} 
+                            target="_blank" 
+                            rel="noopener noreferrer"
+                            className="text-gray-500 hover:text-gray-700 dark:hover:text-gray-300"
+                          >
+                            <ExternalLink className="h-4 w-4" />
+                          </a>
+                        )}
+                      </div>
+                      
+                      <Button asChild size="sm">
+                        <Link href={`/artists/${artist.id}`}>View Profile</Link>
+                      </Button>
+                    </CardFooter>
+                  </Card>
                 ))}
               </div>
               
-              {artists.length < totalArtists && (
-                <div className="mt-8 text-center">
-                  <Button
-                    variant="outline"
-                    size="lg"
-                    onClick={loadMoreArtists}
-                    disabled={isLoading}
-                  >
-                    {isLoading ? 'Loading...' : 'Load More Artists'}
-                  </Button>
+              {/* Pagination */}
+              {totalPages > 1 && (
+                <div className="flex justify-center mt-8">
+                  <div className="flex space-x-2">
+                    <Button
+                      variant="outline"
+                      onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
+                      disabled={currentPage === 1}
+                    >
+                      Previous
+                    </Button>
+                    <div className="flex items-center justify-center px-4 border rounded-md">
+                      Page {currentPage} of {totalPages}
+                    </div>
+                    <Button
+                      variant="outline"
+                      onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))}
+                      disabled={currentPage === totalPages}
+                    >
+                      Next
+                    </Button>
+                  </div>
                 </div>
               )}
             </>
           ) : (
-            <div className="text-center py-12">
+            <div className="text-center py-16 border border-dashed rounded-lg">
+              <User className="mx-auto h-12 w-12 text-gray-400 mb-4" />
               <h3 className="text-lg font-medium mb-2">No artists found</h3>
-              <p className="text-gray-500 dark:text-gray-400 mb-4">
-                Try adjusting your filters or location search
+              <p className="text-gray-500 dark:text-gray-400 mb-6 max-w-md mx-auto">
+                We couldn't find any artists matching your filters. Try adjusting your search criteria.
               </p>
-              <Button variant="outline" onClick={resetFilters}>
-                Reset Filters
-              </Button>
+              <Button onClick={clearAllFilters}>Clear All Filters</Button>
             </div>
           )}
         </div>
