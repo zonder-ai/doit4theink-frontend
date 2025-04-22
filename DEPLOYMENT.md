@@ -1,6 +1,6 @@
 # Deploying DoIt4TheInk to Fly.io
 
-This document explains how to deploy the DoIt4TheInk frontend to Fly.io.
+This document explains how to deploy the DoIt4TheInk frontend to Fly.io using Heroku buildpacks.
 
 ## Prerequisites
 
@@ -38,18 +38,49 @@ If you prefer to deploy manually:
    flyctl apps create doit4theink-frontend
    ```
 
-3. Set the required secrets:
+3. Set the required secrets as environment variables:
    ```bash
-   flyctl secrets set NEXT_PUBLIC_SUPABASE_URL=your-supabase-url
-   flyctl secrets set NEXT_PUBLIC_SUPABASE_ANON_KEY=your-supabase-anon-key
-   flyctl secrets set NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY=your-stripe-publishable-key
-   # Add any other secrets your application needs
+   flyctl secrets set NEXT_PUBLIC_SUPABASE_URL=your-supabase-url \
+                     NEXT_PUBLIC_SUPABASE_ANON_KEY=your-supabase-anon-key \
+                     NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY=your-stripe-publishable-key
    ```
 
 4. Deploy the application:
    ```bash
    flyctl deploy
    ```
+
+## Key Configuration Files
+
+### fly.toml
+
+The `fly.toml` file contains the configuration for your Fly.io application. It specifies:
+
+- Application name
+- Region
+- Build configuration (uses Heroku buildpacks)
+- Environment variables
+- Service configuration
+
+### Procfile
+
+The `Procfile` tells the Heroku buildpack how to run your application. It contains:
+
+```
+web: npm start
+```
+
+This runs the `start` script defined in your package.json.
+
+### .buildpacks
+
+The `.buildpacks` file specifies which buildpacks to use for deployment. It contains:
+
+```
+https://github.com/heroku/heroku-buildpack-nodejs.git
+```
+
+This tells Fly.io to use the official Heroku Node.js buildpack.
 
 ## Troubleshooting
 
@@ -60,10 +91,9 @@ If you prefer to deploy manually:
    - Check the logs with `flyctl logs`
 
 2. **Build Process Fails**:
-   - Check that the Docker build process works locally with:
-     ```bash
-     docker build -t doit4theink-frontend .
-     ```
+   - Ensure your package.json has the correct scripts:
+     - `"build": "next build"`
+     - `"start": "next start"`
 
 3. **App Starts But Shows Blank Screen or Errors**:
    - Check for runtime errors in the logs with `flyctl logs`
@@ -76,9 +106,9 @@ To view the logs of your application:
 flyctl logs
 ```
 
-To SSH into your running app for deeper debugging:
+To see the status of your app:
 ```bash
-flyctl ssh console
+flyctl status
 ```
 
 ## Environment Management
@@ -87,22 +117,9 @@ flyctl ssh console
 
 If you need to add more environment variables to your deployed app:
 
-1. Add them to the Fly.io secrets:
-   ```bash
-   flyctl secrets set NEW_ENV_VARIABLE=value
-   ```
-
-2. Update the Dockerfile to include these variables in the build process:
-   ```dockerfile
-   ARG NEW_ENV_VARIABLE
-   ENV NEW_ENV_VARIABLE=$NEW_ENV_VARIABLE
-   ```
-
-3. Update the GitHub workflow (.github/workflows/fly.yml) to pass these variables:
-   ```yaml
-   env:
-     NEW_ENV_VARIABLE: ${{ secrets.NEW_ENV_VARIABLE }}
-   ```
+```bash
+flyctl secrets set NEW_ENV_VARIABLE=value
+```
 
 ### Viewing Current Secrets
 
@@ -115,4 +132,4 @@ flyctl secrets list
 
 - [Fly.io Documentation](https://fly.io/docs/)
 - [Next.js Deployment Documentation](https://nextjs.org/docs/deployment)
-- [Dockerizing Next.js Applications](https://nextjs.org/docs/deployment#docker-image)
+- [Heroku Buildpacks Documentation](https://devcenter.heroku.com/articles/buildpacks)
