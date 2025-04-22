@@ -1,6 +1,15 @@
 import { createClient } from '@supabase/supabase-js'
 import { Database } from '@/types/supabase'
 
+// Ensure we have the required environment variables
+if (!process.env.NEXT_PUBLIC_SUPABASE_URL) {
+  console.warn('NEXT_PUBLIC_SUPABASE_URL environment variable is missing')
+}
+
+if (!process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) {
+  console.warn('NEXT_PUBLIC_SUPABASE_ANON_KEY environment variable is missing')
+}
+
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://fmkzfzlujrmwipkoubmm.supabase.co'
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''
 
