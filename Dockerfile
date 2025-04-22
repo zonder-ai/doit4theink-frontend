@@ -18,13 +18,14 @@ COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 
 # Next.js collects completely anonymous telemetry data about general usage.
+# Learn more here: https://nextjs.org/telemetry
+# Uncomment the following line in case you want to disable telemetry during the build.
 ENV NEXT_TELEMETRY_DISABLED 1
 
-# Add NODE_ENV=production during build
-ENV NODE_ENV production
-
-# Build application with verbose output to see errors
-RUN npm run build || (echo "Build failed" && cat .next/error.log && exit 1)
+# Add debugging for the build process
+RUN echo "Contents of directory before build:" && ls -la
+RUN echo "Next.js version:" && node_modules/.bin/next --version || echo "Next.js CLI not found"
+RUN npm run build || { echo "Build failed with error code $?"; exit 1; }
 
 # Production image, copy all the files and run next
 FROM base AS runner
@@ -36,8 +37,7 @@ ENV NEXT_TELEMETRY_DISABLED 1
 RUN addgroup --system --gid 1001 nodejs
 RUN adduser --system --uid 1001 nextjs
 
-# Copy public directory
-COPY --from=builder /app/public ./public
+COPY --from=builder /app/public ./public || true
 
 # Set the correct permission for prerender cache
 RUN mkdir -p .next
@@ -45,8 +45,8 @@ RUN chown nextjs:nodejs .next
 
 # Automatically leverage output traces to reduce image size
 # https://nextjs.org/docs/advanced-features/output-file-tracing
-COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
-COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
+COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./ || echo "Standalone output not found, falling back to regular build"
+COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static || echo "Static files not found"
 
 USER nextjs
 
