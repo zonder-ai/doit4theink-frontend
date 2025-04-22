@@ -6,20 +6,20 @@ WORKDIR /app
 # Install dependencies only when needed
 FROM base AS deps
 
-# Add development tools for better debugging and building native dependencies
-RUN apk add --no-cache libc6-compat python3 make g++
+# Add development tools and other dependencies
+RUN apk add --no-cache libc6-compat python3 make g++ git
 
-# Copy package files
-COPY package.json package-lock.json* ./
+# Copy package files and npmrc
+COPY package.json package-lock.json* .npmrc ./
 
-# Try npm install with more verbose output and fallback
-RUN echo "Running npm ci..." && \
-    npm ci --verbose || \
-    (echo "npm ci failed, trying npm install..." && \
-    npm install --verbose)
-
-# Clean cache to reduce image size
-RUN npm cache clean --force
+# Install dependencies with fallback mechanisms
+RUN echo "Installing dependencies..." && \
+    npm install --no-audit --prefer-offline --frozen-lockfile --network-timeout=100000 || \
+    (echo "Retrying with legacy peer deps..." && \
+     npm install --no-audit --prefer-offline --legacy-peer-deps --network-timeout=100000) || \
+    (echo "Retrying with clean install..." && \
+     npm cache clean --force && \
+     npm install --no-audit --prefer-offline --legacy-peer-deps --no-package-lock --network-timeout=100000)
 
 # Rebuild the source code only when needed
 FROM base AS builder
@@ -30,6 +30,10 @@ COPY --from=deps /app/node_modules ./node_modules
 
 # Copy source files
 COPY . .
+
+# Debug information
+RUN echo "Node version: $(node -v)" && echo "NPM version: $(npm -v)"
+RUN ls -la
 
 # Set environment variables
 ENV NEXT_TELEMETRY_DISABLED 1
